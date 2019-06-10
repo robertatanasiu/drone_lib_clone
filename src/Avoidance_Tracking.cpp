@@ -298,7 +298,9 @@ int main(int argc, char **argv)
     storePosition(POSITIONS.FinalTracking, drone.Data.local_pose.pose.position.x,
                   drone.Data.local_pose.pose.position.y, drone.Data.local_pose.pose.position.z,
                   drone.Data.compass_heading.data);
-    
+
+    // STEP 4 ---- HOVER ABOVE AMBULANCE AND LAND WITH VISION ----              
+
    float relVelLanding[3];
    float relPosLanding[3];
    float descentVelocity = -0.2;
