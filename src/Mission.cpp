@@ -9,7 +9,7 @@ int main(int argc, char **argv)
     GDPdrone drone;
 
     // Save data to flight_data
-    drone.Data.save_data = true;
+    //drone.Data.save_data = true;
 
     // Set the rate. Default working frequency is 25 Hz
     float loop_rate = 25.0;

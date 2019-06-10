@@ -14,6 +14,9 @@
 #include <mavros_msgs/PositionTarget.h>
 #include <mavros_msgs/GlobalPositionTarget.h>
 #include <std_msgs/Float64.h>
+#include <mavros_msgs/OverrideRCIn.h>
+#include <mavros_msgs/ActuatorControl.h>
+#include <boost/circular_buffer.hpp>
 
 class commands
 {
@@ -34,17 +37,18 @@ public:
 
     void move_Position_Local(float _x, float _y, float _z, float _yaw_angle_deg, std::string _frame, int count);
     void move_Velocity_Local(float _x, float _y, float _z, float _yaw_rate_deg_s, std::string _frame);
+    void move_Velocity_Local_Gerald(float _fixed_speed, float _yaw_angle_deg, std::string _frame);
     void move_Acceleration_Local(float _x, float _y, float _z, std::string _frame);
     void move_Acceleration_Local_Trick(float _x, float _y, float _z, std::string _frame, float rate);
-    void move_Acceleration_Local_Trick(float _x, float _y, std::string _frame, float rate);
     void move_Position_Global(float _latitude, float _longitude, float _altitude, float _yaw_angle_deg, std::string _frame);
-
+    void move_Acceleration_Local_PD(float _x, float _y, float _z, float yaw_rate, std::string _frame, float rate);
 
     ///< Overloaded for Silwood test 1 mission
     void move_Velocity_Local(float _fixed_speed, float _yaw_angle_deg, std::string _frame);
 
     ///< Velocity initialiser for Jake's algorithm
     void Initialise_Velocity_for_AccelCommands(float vx, float vy, float vz);
+
 
 private:
     //-----   PRIVATE PROPERTIES -----//
@@ -58,6 +62,8 @@ private:
     float com_z;
     float com_yaw;
     std::vector<float> corrected_vector;
+    boost::circular_buffer<float> yaw_buffer = boost::circular_buffer<float>(2);      ///< Circular buffer for yaw angle to target
+
 
     //-----   PRIVATE DATA STORES -----//
     mavros_msgs::ExtendedState extended_state;

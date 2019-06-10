@@ -1,6 +1,9 @@
 #include "headers/commands.h"
 #include "headers/functions.h"
 #include "headers/data.h"
+#include <cmath>
+
+const double pi = 3.14159265358979;
 
 //-----   METHODS -----//
 // Default constructor
@@ -146,6 +149,22 @@ void commands::move_Velocity_Local(float _x, float _y, float _z, float _yaw_rate
     target_pub_local.publish(pos);
 }
 
+void commands::move_Velocity_Local_Gerald(float _fixed_speed, float _yaw_angle_deg, std::string _frame)
+{
+    mavros_msgs::PositionTarget pos;
+    commands::set_frame(&pos, _frame, true);
+    pos.type_mask = mavros_msgs::PositionTarget::IGNORE_PX | mavros_msgs::PositionTarget::IGNORE_PY |
+                    mavros_msgs::PositionTarget::IGNORE_PZ | mavros_msgs::PositionTarget::IGNORE_AFX |
+                    mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ |
+                    mavros_msgs::PositionTarget::FORCE | mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
+    // constant speed of 1.50 m/s
+    pos.yaw = functions::DegToRad(_yaw_angle_deg);
+    pos.velocity.x = cos(pos.yaw) * _fixed_speed;
+    pos.velocity.y = sin(pos.yaw) * _fixed_speed;
+    pos.velocity.z = 0;
+    target_pub_local.publish(pos);
+}
+
 void commands::move_Acceleration_Local(float _x, float _y, float _z, std::string _frame)
 {
     if (_x > 1.0 || _y > 1.0 || _z > 1.0)
@@ -174,6 +193,7 @@ void commands::Initialise_Velocity_for_AccelCommands(float vx, float vy, float v
     velocity_x = vx;
     velocity_y = vy;
     velocity_z = vz;
+    yaw_buffer[0] = atan2(velocity_x, velocity_y);
 }
 
 void commands::move_Acceleration_Local_Trick(float _x, float _y, float _z, std::string _frame, float rate)
@@ -184,13 +204,20 @@ void commands::move_Acceleration_Local_Trick(float _x, float _y, float _z, std::
     pos.type_mask = mavros_msgs::PositionTarget::IGNORE_PX | mavros_msgs::PositionTarget::IGNORE_PY |
                     mavros_msgs::PositionTarget::IGNORE_PZ | mavros_msgs::PositionTarget::IGNORE_AFX |
                     mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ |
-                    mavros_msgs::PositionTarget::FORCE | mavros_msgs::PositionTarget::IGNORE_YAW |
-                    mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
+                    mavros_msgs::PositionTarget::FORCE | mavros_msgs::PositionTarget::IGNORE_YAW;
 
     // Update accumulated velocites. Acc = DV/Dt -> DV = Acc * Dt -> DV = Acc / Freq
     velocity_x += _x / rate;
     velocity_y += _y / rate;
     velocity_z += _z / rate;
+
+ 
+    ///< use velocities to find the yaw rate required
+    yaw_buffer.push_back(atan2(velocity_x, velocity_y));
+
+    pos.yaw_rate = (yaw_buffer[1] - yaw_buffer[0]) * rate;
+    ROS_INFO("Yaw rate is [%f]", pos.yaw_rate);
+
 
     // Send accumulated velocities
     pos.velocity.x = velocity_x;
@@ -201,7 +228,7 @@ void commands::move_Acceleration_Local_Trick(float _x, float _y, float _z, std::
     target_pub_local.publish(pos);
 }
 
-void commands::move_Acceleration_Local_Trick(float _x, float _y, std::string _frame, float rate)
+void commands::move_Acceleration_Local_PD(float _x, float _y, float _z, float yaw_rate, std::string _frame, float rate)
 {
     mavros_msgs::PositionTarget pos;
     commands::set_frame(&pos, _frame, true);
@@ -209,20 +236,24 @@ void commands::move_Acceleration_Local_Trick(float _x, float _y, std::string _fr
     pos.type_mask = mavros_msgs::PositionTarget::IGNORE_PX | mavros_msgs::PositionTarget::IGNORE_PY |
                     mavros_msgs::PositionTarget::IGNORE_PZ | mavros_msgs::PositionTarget::IGNORE_AFX |
                     mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ |
-                    mavros_msgs::PositionTarget::FORCE | mavros_msgs::PositionTarget::IGNORE_YAW |
-                    mavros_msgs::PositionTarget::IGNORE_YAW_RATE | mavros_msgs::PositionTarget::IGNORE_VZ;
+                    mavros_msgs::PositionTarget::FORCE | mavros_msgs::PositionTarget::IGNORE_YAW;
 
     // Update accumulated velocites. Acc = DV/Dt -> DV = Acc * Dt -> DV = Acc / Freq
     velocity_x += _x / rate;
     velocity_y += _y / rate;
+    velocity_z += _z / rate;
+
 
     // Send accumulated velocities
     pos.velocity.x = velocity_x;
     pos.velocity.y = velocity_y;
+    pos.velocity.z = velocity_z;
+    pos.yaw_rate = yaw_rate;
 
     // Publish command
     target_pub_local.publish(pos);
 }
+
 
 void commands::move_Position_Global(float _latitude, float _longitude, float _altitude, float _yaw_angle_deg, std::string _frame)
 {
@@ -450,3 +481,4 @@ void commands::move_Velocity_Local(float _fixed_speed, float _yaw_angle_deg, std
     pos.velocity.z = 0;
     target_pub_local.publish(pos);
 }
+

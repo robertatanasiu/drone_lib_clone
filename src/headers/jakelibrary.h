@@ -6,21 +6,17 @@
 #include <cmath>
 #include <math.h>
 
-
-
-
-
-
     // Initialising
-    const float switchDist = 1.0; // In reality, camera should start working when it is 8m away. However, GPS is on car NOT THE PLATFORM so probably 6.5 m max
-    float distance;
+    const float switchDist = 7.0; // In reality, camera should start working when it is 8m away. However, GPS is on car NOT THE PLATFORM so probably 6.5 m max
+    float gpsdistance;
     float droneVel[3] = {0}; // Relative to earth
     float relVel[3] = {0};
     float droneAcc[3] = {0};
     float relPos[3] = {0};
     float relPosOld[3] = {0};
-
-
+    float relPosHoriz[3] = {0};
+    float accFix;
+    
 
     // declare functions
     void droneInitVel(float relPos[3], float (&droneVel)[3]); 
@@ -29,32 +25,35 @@
     float norm(float vector[3]);
     void velFromGPS(float relPos[3], float relPosOld[3], float loop_rate, float (&relVel)[3]);
     float dot(float vector1[3], float vector2[3]);
-    void relPosCalc(float dronePos[3], float targPos[3], float (&relPos)[3]);
-    void relVelCalc(float droneVel[3], float targVel[3], float (&relVel)[3]);
     void droneAccComp(float relPos[3], float relVel[3], float (&droneAcc)[3]);
-
+    
     ///< testfix
     double velocityholder[3];
 
+    // Landing
+    void velPosMap(float relPosLanding[3], float (&relVelLanding)[3]); 
+    float altitudeFix(float realAltitude, float altitude);
 
 
 //< ------------------------------------ Function Definitions ------------------------------------------>
 
-
 ///<Jake Code Initialisation
+// INPUT:  target position position or relative position (its the same), NED
+// OUTPUT: runs droneInitVel,
+//         calculates distance to target using norm
 void InitialiseJakeCode(float x, float y, float z){ ///< initialise with arguments of relative position of drone
 
     relPos[0] = y;
     relPos[1] = x;
     relPos[2] = z;
+    relPos[2] = 0.0;
 
-    droneInitVel(relPos , droneVel);
+    droneInitVel(relPos, droneVel);
     relVel[0] = -droneVel[0];
     relVel[1] = -droneVel[1];   
     relVel[2] = -droneVel[2];
 
-
-    distance = norm(relPos);
+    gpsdistance = norm(relPos);
 
 }
 
@@ -62,6 +61,8 @@ void InitialiseJakeCode(float x, float y, float z){ ///< initialise with argumen
 // Passes the output, droneVel, by reference
 // NOTE: If target is precisely East or West of drone, e.g. dronePos[0] = targPos[0], the algorithm follows a strange
 //       trajectory, however it will still reach the target.
+// INPUT:  relative position, NED
+// OUTPUT: the required drone velocity in the direction of the target
 void droneInitVel(float relPos[3], float (&droneVel)[3]) {
 
     float heading;
@@ -80,14 +81,12 @@ void droneInitVel(float relPos[3], float (&droneVel)[3]) {
     droneVel[1] = initVelMag * sin(heading);
     droneVel[2] = 0;
 
-    // Make sure the velocities in the right direction
+    // Make sure the velocities are in the right direction
     if (relPos[0] < 0) {
         droneVel[0] = - droneVel[0];
         droneVel[1] = - droneVel[1];
     }
 }
-
- 
 
 
 // Computes the cross product of a 3-dimensional vector
@@ -115,7 +114,21 @@ float norm(float vector[3]) {
     return norm;
 }
 
+// Computes the dot product of two vectors
+float dot(float vector1[3], float vector2[3]) {
 
+    float accum = 0;
+
+    for (int i = 0; i < 3; ++i) {
+        accum += vector1[i] * vector2[i];
+    }
+
+    return accum;
+}
+
+
+// INPUTS:  A position for this and last time step. Can be taregt, drone or relative. Need previous time step, NED
+// OUTPUTS: velocity corresponding to whatever position was input, NED
 void velFromGPS(float relPos[3], float relPosOld[3], float loop_rate, float (&vel)[3]) {
 
 if (relPos != relPosOld){  ///< if not the same position, update velocity
@@ -131,35 +144,10 @@ vel[2] = velocityholder[2];
 }
 
 
-// Computes the dot product of two vectors
-float dot(float vector1[3], float vector2[3]) {
-
-    float accum = 0;
-
-    for (int i = 0; i < 3; ++i) {
-        accum += vector1[i] * vector2[i];
-    }
-
-    return accum;
-}
-
-void relPosCalc(float dronePos[3], float targPos[3], float (&relPos)[3]) {
-    for (int i = 0; i < 3; ++i) {
-        relPos[i] = targPos[i] - dronePos[i];
-    }
-    // Important to ensure the algorithm works in 2-D, ask Jake if you care
-    relPos[2] = 0.0;
-}
-
-// Calculates the relative velocity between the drone and target
-void relVelCalc(float droneVel[3], float targVel[3], float (&relVel)[3]) {
-    for (int i = 0; i < 3; ++i) {
-        relVel[i] = targVel[i] - droneVel[i];
-    }
-}
-
 // Calculates the acceleration of the drone in i,j,k
 // Passes the output, droneAcc by reference
+// INPUT:  relative position, NED, relative velocity, NED
+// OUTPUT: drone acceleration, NED.
 void droneAccComp(float relPos[3], float relVel[3], float (&droneAcc)[3]) {
 
     float  uMag;
@@ -173,7 +161,10 @@ void droneAccComp(float relPos[3], float relVel[3], float (&droneAcc)[3]) {
     float  uCrossOmega[3];
     float  aPerp[3];
     float  aParr[3];
+    float  acclim = 2.0;
 
+    relPos[2] = 0.0;
+    relVel[2] = 0.0;
     // Calculate the magnitude of the relative position and velocity vectors
     uMag    = norm(relPos);
     uDotMag = norm(relVel);
@@ -201,8 +192,58 @@ void droneAccComp(float relPos[3], float relVel[3], float (&droneAcc)[3]) {
         aParr[i] = Kp * relPos[i] + Kd * relVel[i];
         droneAcc[i] = aPerp[i] + aParr[i];
     }
+
+    // If the total acceleration is greater than 2, scale each component such that the norm is 2
+    /*
+    if ( norm(droneAcc) > acclim ) {
+        float normDroneAcc = norm(droneAcc);
+        for (int i = 0; i < 3; ++i) {
+            droneAcc[i] /= (normDroneAcc / acclim);
+        }
+    }
+    */
 }
 
+
+
+
+
+// Linear mapping between velocity and position. Basically it takes the relative position, 
+// and gives the drone a relative velocity in the same direction but with two thirds the magnitude.
+// If the position exceeds three metres, the velocity is capped at 2.
+// INPUTS:  the relative position between the drone and the target, NED
+// OUTPUTS: the relative velocity between the drone and the target, NED
+void velPosMap(float relPosLanding[3], float (&relVelLanding)[3]) 
+{
+    float velMax = 2.0;
+    float posMax = 3.0;
+    float scaling;
+
+    gpsdistance = norm(relPosLanding);
+
+    for (int i = 0; i < 3; ++i) {
+        relVelLanding[i] = relPosLanding[i];
+    }
+
+    if (gpsdistance > posMax) {
+        for (int i = 0; i < 3; ++i) {
+            relVelLanding[i] /= ( gpsdistance / velMax );
+        }
+    }
+    else {
+        scaling = gpsdistance * velMax / posMax;
+        for (int i = 0; i < 3; ++i) {
+            relVelLanding[i] /= ( gpsdistance / scaling );
+        }
+    }
+} 
+
+
+float altitudeFix(float realAltitude, float setAltitude) {
+    float k = 0.1;
+    accFix = k * (setAltitude + realAltitude);
+    return accFix;
+}
 
 
 

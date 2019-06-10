@@ -1,0 +1,8 @@
+#include "headers/gdpdrone.h"
+#include <fstream>
+#include <string.h>
+#include <iterator> 
+#include <random> 
+
+bool detectObstacle(float right, float centre, float left, float range);
+
